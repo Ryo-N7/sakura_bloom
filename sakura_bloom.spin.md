@@ -2,19 +2,19 @@ April in Japan is a time of new beginnings. Unlike most countries, the school ye
 
 ![Imgur](https://i.imgur.com/1lGPG0Y.png)
 
-For this article I will try to recreate this graphic but with my own twist. Thankfully the raw data is made available by the original author of the research paper documenting this phenomenon, Dr. Yasuyuki Aono from Osaka Prefecture University. The dataset can be downloaded from [here](http://atmenv.envi.osakafu-u.ac.jp/aono/kyophenotemp4/).
+For this article I will try to recreate this graphic but with a few tricks of my own. Thankfully the raw data is made available by the original author of the research paper documenting this phenomenon, Dr. Yasuyuki Aono from Osaka Prefecture University. The data set can be downloaded from [here](http://atmenv.envi.osakafu-u.ac.jp/aono/kyophenotemp4/).
 
 Let's get started by loading up our trusty packages and data:
 
 ``` r
-# Sakura data
 library(tidyverse)
 library(stringr)
 library(scales)
 
 # Load data ---------------------------------------------------------------
 
-sakura <- read.csv("~/R_materials/Kyoto_Flowers.csv")
+sakura <- read.csv("~/R_materials/sakura_bloom/Kyoto_Flowers.csv")
+
 glimpse(sakura)
 ```
 
@@ -25,17 +25,43 @@ glimpse(sakura)
     ## $ Full.flowering.date       <int> NA, NA, NA, NA, NA, NA, NA, NA, NA, ...
     ## $ Source.code               <int> NA, NA, NA, NA, NA, NA, NA, NA, NA, ...
     ## $ Data.type.code            <int> NA, NA, NA, NA, NA, NA, NA, NA, NA, ...
-    ## $ Reference.Name            <fctr> -, -, -, -, -, -, -, -, -, -, -, NI...
+    ## $ Reference.Name            <fct> -, -, -, -, -, -, -, -, -, -, -, NIH...
     ## $ X                         <lgl> NA, NA, NA, NA, NA, NA, NA, NA, NA, ...
 
-From looking at the raw data, it appears that data is missing from a number of rows until 812 AD, along with many other rows throughout the years. We might as well cut those rows out especially since we can specify the limits of our year variable in the plot manually when we start plotting.
+From looking at the raw data, it appears that data is missing from a number of rows until **812 AD**, along with many other rows throughout the years. We might as well cut those rows out especially since we can manually specify the limits of our `year` variable when we start plotting.
 
 ``` r
-# Tidy and Clean ----------------------------------------------------------
-
 # remove rows without flowering date
-sakura <- sakura %>% filter(!is.na(Full.flowering.date))
+sakura <- sakura %>% filter(!is.na(Full.flowering.date)) %>% glimpse()
+```
 
+    ## Observations: 827
+    ## Variables: 7
+    ## $ AD                        <int> 812, 815, 831, 851, 853, 864, 866, 8...
+    ## $ Full.flowering.date..DOY. <int> 92, 105, 96, 108, 104, 100, 106, 95,...
+    ## $ Full.flowering.date       <int> 401, 415, 406, 418, 414, 409, 416, 4...
+    ## $ Source.code               <int> 1, 1, 1, 1, 1, 1, 1, 5, 5, 5, 5, 5, ...
+    ## $ Data.type.code            <int> 2, 2, 2, 2, 2, 2, 2, 2, 2, 4, 3, 2, ...
+    ## $ Reference.Name            <fct> NIHON-KOKI, NIHON-KOKI, NIHON-KOKI, ...
+    ## $ X                         <lgl> NA, NA, NA, NA, NA, NA, NA, NA, NA, ...
+
+``` r
+# 12/1/2017: another way, use drop_na()
+
+sakura %>% drop_na(Full.flowering.date) %>% glimpse()
+```
+
+    ## Observations: 827
+    ## Variables: 7
+    ## $ AD                        <int> 812, 815, 831, 851, 853, 864, 866, 8...
+    ## $ Full.flowering.date..DOY. <int> 92, 105, 96, 108, 104, 100, 106, 95,...
+    ## $ Full.flowering.date       <int> 401, 415, 406, 418, 414, 409, 416, 4...
+    ## $ Source.code               <int> 1, 1, 1, 1, 1, 1, 1, 5, 5, 5, 5, 5, ...
+    ## $ Data.type.code            <int> 2, 2, 2, 2, 2, 2, 2, 2, 2, 4, 3, 2, ...
+    ## $ Reference.Name            <fct> NIHON-KOKI, NIHON-KOKI, NIHON-KOKI, ...
+    ## $ X                         <lgl> NA, NA, NA, NA, NA, NA, NA, NA, NA, ...
+
+``` r
 colnames(sakura)   # look at the column names
 ```
 
@@ -44,10 +70,9 @@ colnames(sakura)   # look at the column names
     ## [5] "Data.type.code"            "Reference.Name"           
     ## [7] "X"
 
-from looking at the column names... they don't look very neat or tidy.
+From looking at the column names... they don't look very neat or tidy.
 
 ``` r
-# colnames don't look very neat and tidy...
 colnames(sakura) <- sakura %>% 
   colnames() %>% 
   str_to_lower() %>%                  # to lower case letters
@@ -61,11 +86,11 @@ colnames(sakura)
     ## [5] "data_type_code"            "reference_name"           
     ## [7] "x"
 
-Much better! However there are two columns with names that need some manual fixing:
+Much better! However there are two columns with names that need some manual fixing using the `rename()` function:
 
 ``` r
-colnames(sakura)[1] <- "year"
-colnames(sakura)[2] <- "full_flowering_day_of_year"
+sakura <- sakura %>% rename(year = ad, 
+                            full_flowering_day_of_year = full_flowering_date__doy_)
 
 colnames(sakura)
 ```
@@ -75,14 +100,13 @@ colnames(sakura)
     ## [5] "data_type_code"             "reference_name"            
     ## [7] "x"
 
-OK! Now let's separate the column containing our three-digit date data into individual `month` and `day` columns. We can use regular expressions (**regex**) to parse the character strings of the date (converted from the numeric format first) and then separate the `month` digits and `day` digits with a `.` period symbol.
+OK! Now let's separate the column containing our three-digit date data into individual `month` and `day` columns. After converting the `full_flowering_date` column into **character** format, we can use regular expressions (**regex**) to parse the character strings of the date and then separate the `month` digits and `day` digits with a `.` period symbol.
 
 ``` r
-# turn three digit number into month and day values.
-# split into two backreferences on the first digit, then place a .
+# split into two backreferences on the first digit, then place a '.' in between
 date_sep <- as.character(sakura$full_flowering_date) %>% 
   str_replace_all("(.{1})(.*)", "\\1.\\2") %>% 
-  as.data.frame()
+  as_data_frame()
 
 colnames(date_sep)[1] <- "date_fl"                        # properly name column
 colnames(date_sep)
@@ -91,23 +115,24 @@ colnames(date_sep)
     ## [1] "date_fl"
 
 ``` r
-date_sep <- date_sep %>% separate(date_fl, c("month", "day"), "\\.")  # separate into 'month' and 'day' columns by '.'
+# separate into 'month' and 'day' columns by '.'
+date_sep <- date_sep %>% separate(date_fl, c("month", "day"), "\\.")  
 ```
 
-Now we can combine `date_sep` into `sakura` using `bind_cols()` and then remove the variables we don't need:
+Now we can combine `date_sep` into `sakura` using `bind_cols()` and then remove all the variables we don't need:
 
 ``` r
 sakura <- bind_cols(date_sep, sakura)   
-sakura <- sakura %>% select(-full_flowering_date, -full_flowering_day_of_year, -x, -data_type_code, -reference_name, -source_code)  
+sakura <- sakura %>% 
+  select(-full_flowering_date, -full_flowering_day_of_year, 
+         -x, -data_type_code, -reference_name, -source_code)  
 ```
 
-Using the `lubridate` package we can create a separate variable in YYYY/MM/DD format as well as format the individual date components into their own variables.
+Using the `make_date()` function in the `lubridate` package we can create a separate variable in YYYY/MM/DD format as well as format the individual date components into their own variables.
 
 ``` r
 library(lubridate)
-# ?make_date()
-# ?format()
-# use make_date function to create separate variable in full date format
+
 sakura <- sakura %>% 
   mutate(bloom = make_date(year, month, day))
 
@@ -131,84 +156,94 @@ glimpse(sakura)
     ## $ Month       <chr> "Apr", "Apr", "Apr", "Apr", "Apr", "Apr", "Apr", "...
     ## $ Day         <chr> "01", "15", "06", "18", "14", "09", "16", "05", "1...
 
-``` r
-# date format are all in <chr>
-```
-
 Now we are ready to plot!
 
 ``` r
-# Plotting ----------------------------------------------------------------
-
 ggplot(sakura, aes(x = Year, y = Day_Of_Year)) +
   geom_point() +
-  geom_line() +
-  scale_y_continuous(labels = function(x) format(as.Date(as.character(x), "%j"), "%d-%b"))
+  scale_y_continuous(labels = function(x) format(as.Date(as.character(x), "%j"), "%d-%b")) +
+  scale_x_discrete(breaks = pretty_breaks(5))
 ```
 
-![](sakura_bloom.spin_files/figure-markdown_github/unnamed-chunk-8-1.png)
+<img src="sakura_bloom.spin_files/figure-markdown_github/basic plot-1.png" style="display: block; margin: auto;" />
 
 Does not look very clear...
 
+Let's add a smoother to see the overall trend over time!
+
 ``` r
-ggplot(sakura, aes(x = year, y = Day_Of_Year)) +  # or just use original 'year' variable...
+ggplot(sakura, aes(x = year, y = Day_Of_Year)) + 
   geom_point() +
-  geom_smooth(span = 0.2, size = 3) +
+  geom_smooth(span = 0.2, size = 2.5) +
   scale_y_continuous(labels = function(x) format(as.Date(as.character(x), "%j"), "%b-%d"),
                      limits = c(84, 125))
 ```
 
-![](sakura_bloom.spin_files/figure-markdown_github/unnamed-chunk-9-1.png)
+<img src="sakura_bloom.spin_files/figure-markdown_github/smoother-1.png" style="display: block; margin: auto;" />
 
-Slightly better, but could we make it more... sakura-y?
+Looks better! Now we can clearly see the trend of the sakura blooming date over time! But could we make it more... sakura-y?
 
 ``` r
 ggplot(sakura, aes(x = year, y = Day_Of_Year)) +  # or just use original 'year' variable...
   geom_point(shape = 8, size = 5, color = "pink") +
-  geom_smooth(span = 0.2, color = "#dd1c77", fill = "red", size = 3) +
+  geom_smooth(span = 0.2, color = "#dd1c77", fill = "red", size = 2.5) +
   scale_y_continuous(labels = function(x) format(as.Date(as.character(x), "%j"), "%b-%d"),
                      limits = c(84, 125))
 ```
 
-![](sakura_bloom.spin_files/figure-markdown_github/unnamed-chunk-10-1.png)
+<img src="sakura_bloom.spin_files/figure-markdown_github/sakura colors-1.png" style="display: block; margin: auto;" />
 
-Better! but does not look good on a drab grey background...
-So let's add a background image!
+Better! But, the colors don't look good on a drab grey background... So let's add a background image! We can do this by utilizing a variety of packages such as `jpeg`, `grid`, and `gridExtra` to download an image from the internet, turn it into a raster, and then place our ggplot on top of it in a customized function!
+
+In this custom function we will:
+
+1.  Download an image and store it in a temporary file
+2.  Save that image with the `readJPEG()` function
+3.  Use `rasterGrob()` to render a raster object with the downloaded image
+4.  Build up our ggplot visualization step-by-step
 
 ``` r
-#### With background image!
 library(jpeg)
 library(grid)
 library(gridExtra)
-library(cowplot)
 
-sakura_r <- function(df = sakura, xvar = 'as.numeric(Year)', yvar = 'Day_Of_Year') {
-  img_url <- 'https://i.imgur.com/CgwU1zb.jpg'
-  tmp_file <- tempfile()
-  download.file(img_url, tmp_file, mode = "wb")
-  img <- readJPEG(tmp_file)
-  file.remove(tmp_file)
+sakura_r <- function(df = sakura, xvar = "as.numeric(Year)", yvar = "Day_Of_Year") {
   
-  rstr <- rasterGrob(img, width = unit(1,"npc"), height = unit(1,"npc"), interpolate = FALSE)
+  img_url <- "https://i.imgur.com/CgwU1zb.jpg"
+  temp <- tempfile()
+  download.file(img_url, temp, mode = "wb")
+  img <- readJPEG(temp)
+  file.remove(temp)
   
-  g <- ggplot(data = df)  + annotation_custom(rstr, -Inf, Inf, -Inf, Inf)
-  g <- g + geom_point(aes_string(x = xvar, y = yvar), alpha = 0.8, color = "pink", shape = 8)
-  g <- g + geom_smooth(aes_string(x = xvar, y = yvar), color = "#dd1c77", span = 0.2, size = 2.5, fill = "#f768a1", alpha = 0.7)
-  g <- g + scale_y_continuous(labels = function(x) format(as.Date(as.character(x), "%j"), "%d-%b"))
-  g <- g + scale_x_continuous(limits = c(800, 2020), breaks = seq(800, 2000, 200))
-  g <- g + labs(x = "Year", y = "Date of peak sakura bloom")
-  g <- g + ggtitle("Sakura blooming", subtitle = "Date of sakura blossoming in Kyoto (800-2015 CE)")
-  g <- g + theme(legend.position = "top", legend.background = element_rect(color = "black"),
-                 axis.text.x = element_text(angle = 45, hjust = 1))
+  rstr <- rasterGrob(img, width = unit(1, "npc"), height = unit(1, "npc"), interpolate = FALSE)
+  
+  g <- ggplot(data = df) + 
+    annotation_custom(rstr, -Inf, Inf, -Inf, Inf) +
+    geom_point(aes_string(x = xvar, y = yvar), alpha = 0.8, color = "pink", shape = 8) +
+    geom_smooth(aes_string(x = xvar, y = yvar), 
+                alpha = 0.7, color = "#dd1c77", span = 0.2, size = 2.5, fill = "#f768a1") +
+    scale_y_continuous(labels = function(x) format(as.Date(as.character(x), "%j"), "%d-%b")) +
+    scale_x_continuous(limits = c(800, 2020), breaks = seq(800, 2000, 200)) +
+    labs(x = "Year", y = "Date of peak sakura bloom") +
+    ggtitle("Sakura blooming", subtitle = "Date of sakura blossoming in Kyoto (800-2015 CE)") +
+    theme(axis.text.x = element_text(size = 11, angle = 45, hjust = 1),
+          axis.text.y = element_text(size = 11))
+  
   return (g)
+  
 }
+
 sakura_r()
 ```
 
-![](sakura_bloom.spin_files/figure-markdown_github/unnamed-chunk-11-1.png)
+<img src="sakura_bloom.spin_files/figure-markdown_github/background image-1.png" style="display: block; margin: auto;" />
 
-Most of the time you would never add in a background image to a plot as it would obscure the individual data points and other details. However, for this graph the main point of interest is the trend line going across and decreasing from the 20th century, pointing out how sakura have been steadily blossoming earlier and earlier in the year which can be clearly seen despite the background image. I mainly wanted to show off a cool new trick I learned and to also do something *slightly* different from what The Economist did. Some other cool adaptations of Dr. Aono's sakura dataset include [this](http://opiateforthemass.es/articles/sakura/) visualization done by Christoph Safferling from *Opiate for the masses* where they incorporated sakura emoji as the data point shapes; definitely much better than the ersatz geom\_point shape I used as "sakura"for my own plot!
+Normally, you would **never** add in a background image to a plot as it would obscure the individual data points and other details.
 
-To cap off, I'll leave you with some photos I took of sakura in Tokyo when I went back home for Spring Break back in April! Can't wait for the blossomings next year!
+However, for this graph the main point of interest is the trend line going across and decreasing from the 20th century, pointing out how sakura have been steadily blossoming earlier and earlier in the year which can be clearly seen despite the background image.
 
-![sakura1]() ![sakura2]() ![sakura3]()
+I mainly wanted to show a cool new trick I learned and to also do something *slightly* different from what *The Economist* did. Some other cool uses of Dr. Aono's sakura data set include [this](http://opiateforthemass.es/articles/sakura/) visualization done by Christoph Safferling from *Opiate for the masses* where they incorporated sakura emoji as the data point shapes; definitely much better than the ersatz `geom_point` shape I used as "sakura" for my own plot!
+
+To cap off, I'll leave you with some photos I took of sakura in Tokyo when I went back home for Spring Break back in April! Can't wait for the blossoming next year!
+
+![sakura1](https://i.imgur.com/mGb9bms.jpg%20=50X10) ![sakura2](https://i.imgur.com/i2z7d4y.jpg%20=30x20) ![sakura3](https://i.imgur.com/fXEmtzx.jpg%20=100x30)
